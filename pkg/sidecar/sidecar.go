@@ -19,6 +19,7 @@ package sidecar
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -86,16 +87,25 @@ func Run(argv []string, version string) int {
 
 	klog.Infof("CSI driver name: %q", rt.DriverName)
 
-	// TBD May need to exposed metric HTTP end point
-	// here because the wait for the CSI driver is open ended.
-
 	grpcServer, err := startGRPCServerAndValidateCSIDriver(s.createServerConfig(rt))
 	if err != nil {
 		klog.Error(err)
 		return 1
 	}
 
-	// TODO: Start the HTTP metrics server here.
+	// start listening & serving http endpoint, if set
+	mux := http.NewServeMux()
+	if *s.httpEndpoint != "" {
+		rt.MetricsManager.RegisterToServer(mux, *s.metricsPath)
+		rt.MetricsManager.SetDriverName(rt.DriverName)
+		go func() {
+			klog.Infof("ServeMux listening at %q", *s.httpEndpoint)
+			err := http.ListenAndServe(*s.httpEndpoint, mux)
+			if err != nil {
+				klog.Fatalf("Failed to start HTTP server at specified address (%q) and metrics path (%q): %s", *s.httpEndpoint, *s.metricsPath, err)
+			}
+		}()
+	}
 
 	shutdownOnTerminationSignal(grpcServer)
 

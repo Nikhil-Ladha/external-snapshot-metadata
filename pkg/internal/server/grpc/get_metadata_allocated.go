@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/kubernetes-csi/external-snapshot-metadata/pkg/api"
+	"github.com/kubernetes-csi/external-snapshot-metadata/pkg/internal/runtime"
 )
 
 func (s *Server) GetMetadataAllocated(req *api.GetMetadataAllocatedRequest, stream api.SnapshotMetadata_GetMetadataAllocatedServer) error {
@@ -55,13 +57,24 @@ func (s *Server) GetMetadataAllocated(req *api.GetMetadataAllocatedRequest, stre
 		return err
 	}
 
+	// Start recording metrics
+	startTime := time.Now()
+	opLabel := map[string]string{
+		runtime.LabelTargetSnapshotName: fmt.Sprintf("%s/%s", req.Namespace, req.SnapshotName),
+	}
+
 	// Invoke the CSI Driver's GetMetadataDelta gRPC and stream the response back to client
 	klog.FromContext(ctx).V(HandlerTraceLogLevel).Info("calling CSI driver", "snapshotId", csiReq.SnapshotId)
 	csiStream, err := csi.NewSnapshotMetadataClient(s.csiConnection()).GetMetadataAllocated(ctx, csiReq)
 	if err != nil {
+		// Record failure metrics
+		s.config.Runtime.RecordMetricsWithLabels(opLabel, runtime.MetadataAllocatedOperationName, startTime, err)
 		klog.FromContext(ctx).Error(err, "csi.GetMetadataAllocated")
 		return err
 	}
+
+	// Record metrics
+	s.config.Runtime.RecordMetricsWithLabels(opLabel, runtime.MetadataAllocatedOperationName, startTime, err)
 
 	return s.streamGetMetadataAllocatedResponse(ctx, stream, csiStream)
 }

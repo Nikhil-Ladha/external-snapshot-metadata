@@ -71,6 +71,7 @@ type TestHarness struct {
 	MockCSIIdentityServer         *driver.MockIdentityServer
 	MockCSISnapshotMetadataServer *driver.MockSnapshotMetadataServer
 	MockCSIDriverConn             *grpc.ClientConn
+	MetricsManager                metrics.CSIMetricsManager
 
 	FakeCSIDriver *driver.CSIDriver
 
@@ -205,7 +206,6 @@ func (th *TestHarness) WithMockCSIDriver(t *testing.T) *TestHarness {
 	mockController := gomock.NewController(t)
 	identityServer := driver.NewMockIdentityServer(mockController)
 	snapshotMetadataServer := driver.NewMockSnapshotMetadataServer(mockController)
-	metricsManager := metrics.NewCSIMetricsManagerForSidecar("" /* driverName */)
 	drv := driver.NewMockCSIDriver(&driver.MockCSIDriverServers{
 		Identity:         identityServer,
 		SnapshotMetadata: snapshotMetadataServer,
@@ -215,6 +215,10 @@ func (th *TestHarness) WithMockCSIDriver(t *testing.T) *TestHarness {
 
 	// Create a client connection to it
 	addr := drv.Address()
+	metricsManager := metrics.NewCSIMetricsManagerWithOptions("",
+		metrics.WithSubsystem(SubSystem),
+		metrics.WithLabelNames(LabelTargetSnapshotName),
+		metrics.WithLabelNames(LabelBaseSnapshotName))
 	csiConn, err := connection.Connect(context.Background(), addr, metricsManager)
 	if err != nil {
 		t.Fatal("Connect", err)
@@ -226,6 +230,7 @@ func (th *TestHarness) WithMockCSIDriver(t *testing.T) *TestHarness {
 	th.MockCSIIdentityServer = identityServer
 	th.MockCSISnapshotMetadataServer = snapshotMetadataServer
 	th.driverName = "mock-csi-driver"
+	th.MetricsManager = metricsManager
 
 	return th
 }

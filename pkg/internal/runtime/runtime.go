@@ -169,7 +169,10 @@ func (rt *Runtime) kubeConnect(kubeconfig string, kubeAPIQPS float32, kubeAPIBur
 func (rt *Runtime) csiConnect(csiAddress string) error {
 	ctx := context.Background()
 
-	metricsManager := metrics.NewCSIMetricsManagerForSidecar("" /* driverName */)
+	metricsManager := metrics.NewCSIMetricsManagerWithOptions("",
+		metrics.WithSubsystem(SubSystem),
+		metrics.WithLabelNames(LabelTargetSnapshotName),
+		metrics.WithLabelNames(LabelBaseSnapshotName))
 	csiConn, err := connection.Connect(
 		ctx,
 		csiAddress,

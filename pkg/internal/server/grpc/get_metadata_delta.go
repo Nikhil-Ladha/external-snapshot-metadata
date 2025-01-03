@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/kubernetes-csi/external-snapshot-metadata/pkg/api"
+	"github.com/kubernetes-csi/external-snapshot-metadata/pkg/internal/runtime"
 )
 
 func (s *Server) GetMetadataDelta(req *api.GetMetadataDeltaRequest, stream api.SnapshotMetadata_GetMetadataDeltaServer) error {
@@ -55,13 +57,25 @@ func (s *Server) GetMetadataDelta(req *api.GetMetadataDeltaRequest, stream api.S
 		return err
 	}
 
+	// Start recording metrics
+	startTime := time.Now()
+	opLabel := map[string]string{
+		runtime.LabelTargetSnapshotName: fmt.Sprintf("%s/%s", req.Namespace, req.TargetSnapshotName),
+		runtime.LabelBaseSnapshotName:   fmt.Sprintf("%s/%s", req.Namespace, req.BaseSnapshotName),
+	}
+
 	// Invoke the CSI Driver's GetMetadataDelta gRPC and stream the response back to client
 	klog.FromContext(ctx).V(HandlerTraceLogLevel).Info("calling CSI driver", "baseSnapshotId", csiReq.BaseSnapshotId, "targetSnapshotId", csiReq.TargetSnapshotId)
 	csiStream, err := csi.NewSnapshotMetadataClient(s.csiConnection()).GetMetadataDelta(ctx, csiReq)
 	if err != nil {
+		// Record failure metrics
+		s.config.Runtime.RecordMetricsWithLabels(opLabel, runtime.MetadataDeltaOperationName, startTime, err)
 		klog.FromContext(ctx).Error(err, "csi.GetMetadataDelta")
 		return err
 	}
+
+	// Record metrics
+	s.config.Runtime.RecordMetricsWithLabels(opLabel, runtime.MetadataDeltaOperationName, startTime, err)
 
 	return s.streamGetMetadataDeltaResponse(ctx, stream, csiStream)
 }
